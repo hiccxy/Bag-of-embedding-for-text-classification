@@ -1,0 +1,21 @@
+this is testting :
+
+
+
+path = App.path
+    files = App.path & "\1.txt"
+    Open files For Input As #1
+
+         
+    path = "provider=microsoft.ace.oledb.12.0;Data Source=" & path & "\s1.accdb"
+    cnn.Open path
+    rec_data.Open "select * from 未修数据_整理数据  order by ID", cnn, adOpenDynamic, adLockPessimistic
+    Line Input #文件号, 字符串变量
+    
+    While Not rec_data.EOF
+        Print #1, rec_data.Fields(1).Value
+        Print #1, rec_data.Fields(2).Value
+        Print #1, rec_data.Fields(3).Value
+        Print #1, rec_data.Fields(4).Value
+        rec_data.MoveNext
+    Wend
