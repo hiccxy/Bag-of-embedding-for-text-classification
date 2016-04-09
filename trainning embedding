@@ -1,0 +1,1124 @@
+//  Copyright 2013 Google Inc. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+#include "stdafx.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <windows.h>
+#include <process.h>
+#include <time.h>
+#include <iomanip> 
+using namespace std;
+
+
+
+//1.选择dtrain and develop
+//2.abtain vocab and numdoc
+//1.读入2种词向量表；
+//2.读入词汇表，建立工作词表；
+//3.读入dtrain，
+//4.for win=k;
+//5.abtained list1；
+//6.利用2种词表，求list2；
+//7.计算lmt1，lmt2；
+
+//1.win=k;
+//2.for lmt2=a;
+//3.计算sum(lmt2(w,w_k)>lmt2)
+
+//1.遍历dtrain，w in d, 遍历窗口中的词w_k,是否是指示词，如果是,计算p_c(w,w_k),得到p_c(w,d+win),求max（p_c(w,d,+win))
+//  计算I(w,d+win),统计I_z(w) and I_w（w);
+//2.统计p_lmt(w);
+//3.输出工作词表
+
+//1.for lmt3=b;
+//2.遍历dtrain+develop,for w in d, if w in lmt3(W), for w_k in win, 计算p_c(w,d+win)，计算p_c(d),
+//3.求max(c),判断对错，
+//4.统计和输出d_label,d_max(c),p_c(d),
+//计算dtrain和delvelop上的正确率，并输出
+
+struct wkdata{
+	int    sword;
+	int    wwk_sum;
+	float  lmt12;
+	float  p[20];
+	float  c_sum[20];
+};
+struct wdata{
+	int sum;
+	wkdata *list;
+	int sum_wk;
+	int sum_lmt12;
+	int w_z;
+	int w_c;
+	float lmt3;
+};
+struct svecdata{
+	char *word;
+	float vec[100];
+	int keyword_id;
+};
+struct lvecdata{
+	char *word;
+	float vec[20][100];
+};
+char train_num_file[100], daan_file[100],      vector_file[100];
+char result_file[100],    workplace_file[100], wen_file[100];
+int   train_sum;
+class develop{
+private:
+	float train_z,train_c;
+	float devel_z,devel_c;
+	svecdata *sveclist;
+	lvecdata *lveclist;
+	wdata *workplace;
+	int word_s_sum;
+	int word_a_sum;
+	int A_sum;
+	int leisum,veclength;
+public:
+	int in_vector(); 
+	int somword_out();
+	int js_wk_p();
+	int js_wk_s(int);
+	int js_lmt1();
+	int js_lmt2();
+	int js_sum_lmt12(float);
+	int js_pw(int,float);
+	int js_lmt3();
+	int out_place(float);
+	int js_key_p(int, float, float);
+	int js_key_d(int, float, float);
+	int js_pcd(int, float, float);  
+	int js_pcd_n(int, float, float);  
+};
+
+int develop::in_vector(){ 
+	fstream fvec;
+	int ws;
+	char word[100];
+	int c,i,k,label;
+	
+	leisum=20;
+	lveclist=new lvecdata[30000];
+	sveclist=new svecdata[30000];
+
+
+	fvec.open(vector_file,ios::in);
+	fvec>>ws>>veclength;
+	ws=0;
+	int mark=0;
+	while(mark==0){
+		for(c=0;c<leisum;c++){
+			fvec>>word;
+			if(strcmp(word,"&*&*&")==0 ||fvec.eof()){
+				mark=1;
+				break;
+			}
+			if(c==0){
+				lveclist[ws].word=new char[strlen(word)+1];
+				strcpy(lveclist[ws].word,word);
+			}
+			fvec>>label;					
+			for(i=0;i<veclength;i++) fvec>>lveclist[ws].vec[c][i];		
+		}
+		if(mark<1) ws=ws+1; 
+	}
+	cout<<ws<<endl;
+	word_a_sum=ws;
+	fvec>>ws>>veclength;
+	ws=0;
+	while(!fvec.eof()){
+		fvec>>word;
+		if(fvec.eof())break; 
+		sveclist[ws].word=new char[strlen(word)+1];
+		strcpy(sveclist[ws].word,word);
+		for(i=0;i<veclength;i++) fvec>>sveclist[ws].vec[i];
+		for(i=0;i<word_a_sum;i++){
+			if(strcmp(word,lveclist[i].word)==0)break;
+		}
+		if(i<word_a_sum)sveclist[ws].keyword_id=i;
+		else  sveclist[ws].keyword_id=-1;
+
+		ws++;		
+		//cout<<word<<" "<<hsum<<endl;
+	}
+	fvec.close();
+
+    cout<<ws<<endl;
+	word_s_sum=ws;
+	A_sum=1400;
+	workplace = new wdata[word_a_sum];
+	for(i=0;i<word_a_sum;i++){
+		if(i<A_sum){
+			workplace[i].list=new wkdata[word_s_sum];
+		}else{
+			if(i<3000)
+				k=6000;
+			else if(i<5000)
+				k=3000;
+			else
+				k=1500;
+			workplace[i].list=new wkdata[k];
+		}
+		//cout<<i<<endl;
+	}
+	return 1;
+}
+int develop::js_wk_p(){
+	int i,j,k,m,c;
+	float cost,allc;
+	for(i=0;i<word_a_sum;i++){
+		if(i%100==0)cout<<" 计算p wordsum="<<i<<endl;
+		if(i<A_sum){
+			for(j=0;j<word_s_sum;j++){
+				allc=0;
+				for(k=0;k<leisum;k++){
+					cost=0;
+					for(m=0;m<veclength;m++){					
+						cost+=lveclist[i].vec[k][m]*sveclist[j].vec[m];
+					}
+					workplace[i].list[j].p[k]=exp(cost);
+					allc+=exp(cost);
+				}
+				for(k =0; k < leisum; k ++){
+					workplace[i].list[j].p[k]/=allc;
+				}
+			}
+		}
+	}
+	return 1;
+}
+struct somedata{
+	char   word[100];
+	int    swordid;
+	int    lwordid;
+	int    simword[5][30];
+	float  simility[5][30];
+	int    pointword[5][30];
+	float  polity[5][30];
+};
+int develop::somword_out(){
+	somedata *sword;
+	sword=new somedata[10];
+	int sword_sum=0,i,j,k,m,n,t;
+	
+	fstream fsomeword,fout;
+	char filename[100],word[100];
+	strcpy(filename,"F:\\带标签的词向量\\数据\\20ng\\someword.txt");
+	fsomeword.open(filename,ios::in);
+	strcpy(filename,"F:\\带标签的词向量\\数据\\20ng\\someword_data.txt");
+	fout.open(filename,ios::app);
+	
+	float s1,s2,s3;
+	float sim,sim_p[20];
+	int leiid[5];
+	leiid[0]=1;
+	leiid[1]=2;
+	leiid[2]=3;
+	leiid[3]=4;
+	leiid[4]=5;
+	while(!fsomeword.eof()){
+		fsomeword>>word;
+		if(fsomeword.eof())break;
+		strcpy(sword[sword_sum].word,word);
+		for(i=0;i<30;i++){
+			for(k=0;k<5;k++){
+				sword[sword_sum].polity[k][i]=0;
+				sword[sword_sum].simility[k][i]=0;
+			}
+		}
+		sword_sum++;
+	}
+	
+	for(i=0;i<sword_sum;i++){
+		for(j=0;j<word_s_sum;j++){
+			if(strcmp(sveclist[j].word,sword[i].word)==0){
+				 sword[i].swordid=j;
+				 break;
+			}
+		}
+		for(j=0;j<word_a_sum;j++){
+			if(strcmp(lveclist[j].word,sword[i].word)==0){
+				 sword[i].lwordid=j;
+				 break;
+			}
+		}
+
+	}
+	for(i=0;i<sword_sum;i++){
+		for(k=0;k<5;k++){
+			for(j=0;j<word_a_sum;j++){
+				s1=0;
+				s2=0;
+				s3=0;
+				for(m=0;m<veclength;m++){
+					s1+=lveclist[sword[i].lwordid].vec[leiid[k]][m]*lveclist[j].vec[leiid[k]][m];
+					s2+=lveclist[sword[i].lwordid].vec[leiid[k]][m]*lveclist[sword[i].lwordid].vec[leiid[k]][m];
+					s3+=lveclist[j].vec[leiid[k]][m]*lveclist[j].vec[leiid[k]][m];
+				}
+				sim=s1/sqrt(s2*s3+0.00000001);
+
+				for(m=0;m<30;m++){
+					if(sword[i].simility[k][m]<sim){
+						for(n=29;n>m;n--){
+							sword[i].simility[k][n]=sword[i].simility[k][n-1];
+							sword[i].simword[k][n]=sword[i].simword[k][n-1];
+						}
+						sword[i].simility[k][m]=sim;
+						sword[i].simword[k][m]=j;
+						break;
+					}
+				}				
+			}
+		}
+	}	
+	for(i=0;i<sword_sum;i++){
+		for(j=0;j<word_a_sum;j++){	
+			sim=0;		
+			for(t=0;t<20;t++){
+				sim_p[t]=0;
+				for(m=0;m<veclength;m++){
+					sim_p[t]+=sveclist[sword[i].swordid].vec[m]*lveclist[j].vec[t][m];
+				}
+				sim_p[t]=exp(sim_p[t]);
+				sim+=sim_p[t];
+			}
+			for(t=0;t<20;t++){
+				if(sim>0){
+					sim_p[t]/=sim;
+				}else{
+					sim_p[t]=0.05;
+				}
+			}
+			for(k=0;k<5;k++){
+				sim=sim_p[k];
+				if(sim<0.005)continue;
+				for(m=0;m<30;m++){
+					if(sword[i].polity[k][m]<sim){
+						for(n=29;n>m;n--){
+							sword[i].polity[k][n]=sword[i].polity[k][n-1];
+							sword[i].pointword[k][n]=sword[i].pointword[k][n-1];
+						}
+						sword[i].polity[k][m]=sim;
+						sword[i].pointword[k][m]=j;
+						break;
+					}
+				}				
+			}
+		}
+	}
+	for(i=0;i<sword_sum;i++){
+		fout<<"------------------"<<endl;
+		fout<<sword[i].word<<endl;
+		for(k=0;k<5;k++){
+			for(j=0;j<30;j++){ 
+				fout<<setw(10)<<sveclist[sword[i].simword[k][j]].word<<" ";
+				fout<<setw(12)<<sword[i].simility[k][j]<<" ";
+			}
+			fout<<endl;	
+		}
+		fout<<endl<<"      **********"<<endl;
+		for(k=0;k<5;k++){
+			for(j=0;j<30;j++){
+				fout<<setw(10)<<sveclist[sword[i].pointword[k][j]].word<<" ";
+				fout<<setw(12)<<sword[i].polity[k][j]<<" ";
+			}
+			fout<<endl;
+		}
+		fout<<endl;
+	}
+	
+	fout<<setw(12)<<"*";
+	for(n=2;n<4;n++){
+		for(j=0;j<sword_sum;j++){
+			fout<<setw(10)<<lveclist[sword[j].swordid].word;
+			fout<<"_";
+			fout<<n<<" ";
+		}
+	}
+	fout<<endl;
+	for(k=2;k<4;k++){
+		for(i=0;i<sword_sum;i++){
+			fout<<setw(10)<<lveclist[sword[i].swordid].word;
+			fout<<"_";
+			fout<<k<<" ";
+		    for(n=2;n<4;n++){
+				for(j=0;j<sword_sum;j++){
+					s1=0;
+					s2=0;
+					s3=0;
+					for(m=0;m<veclength;m++){
+						s1+=lveclist[sword[i].lwordid].vec[leiid[k]][m]*lveclist[sword[j].lwordid].vec[leiid[n]][m];
+						s2+=lveclist[sword[i].lwordid].vec[leiid[k]][m]*lveclist[sword[i].lwordid].vec[leiid[k]][m];
+						s3+=lveclist[sword[j].lwordid].vec[leiid[n]][m]*lveclist[sword[j].lwordid].vec[leiid[n]][m];
+					}
+					sim=s1/sqrt(s2*s3+0.00000001);
+					int ss=sim*1000;
+					sim=ss/(float)1000;
+					fout<<setw(12)<<sim<<" ";
+				}
+			}
+		fout<<endl;
+		}
+	}
+	return 0;	
+}
+int develop::js_wk_s(int win){
+	fstream fnum,fdaan;
+	float allc,cost;
+	int wordid,docid,doclength,thisdoc[20000];
+	int i,j,k,word,sword,c,m,ic;
+	fnum.open(train_num_file,ios::in);
+	fdaan.open(daan_file,ios::in);
+	cout<<word_a_sum<< " "<<word_s_sum<<endl;
+	for(word=0;word<word_a_sum;word++){
+		/*if(word%100==0)
+		cout<<word<<endl;*/
+		workplace[word].sum=0;
+		workplace[word].sum_wk=0;
+		if(word<A_sum){
+			for(sword=0;sword<word_s_sum;sword++){
+				workplace[word].list[sword].wwk_sum=0;
+				for(c=0;c<leisum;c++)	workplace[word].list[sword].c_sum[c]=0;
+			}
+		}else{	
+			i=word;
+			if(i<3000)
+				k=6000;
+			else if(i<5000)
+				k=3000;
+			else				
+				k=1500;
+			for(sword=0;sword<k;sword++){
+				workplace[word].list[sword].wwk_sum=0;
+				for(c=0;c<leisum;c++)  workplace[word].list[sword].c_sum[c]=0;
+			}
+		}
+	}
+	doclength=0;
+	docid=0;
+	while(!fnum.eof()){
+		fnum>>wordid;
+		if(fnum.eof())break;
+		if(wordid>=0){
+			thisdoc[doclength]=wordid;
+			doclength++;
+			//cout<<wordid<<" "<<doclength<<endl;
+		}else{
+			fdaan>>c;
+			c--;
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word=sveclist[wordid].keyword_id;
+				if(word<0)continue;
+				workplace[word].sum++;
+				for(j=i-win;j<=i+win;j++){
+				    if(j<0)j=0;
+				    if(j>=doclength)break;
+				    if(j==i)continue;
+				    sword=thisdoc[j];
+				    if(wordid==sword)continue ;
+					if(word<A_sum){
+						workplace[word].list[sword].c_sum[c]++;
+						workplace[word].list[sword].wwk_sum++;
+						if(workplace[word].list[sword].wwk_sum == 1)
+							workplace[word].sum_wk++;
+					}else{
+						for(k=0;k<workplace[word].sum_wk;k++){
+							if(workplace[word].list[k].sword==sword){
+								workplace[word].list[k].wwk_sum  ++ ;
+								workplace[word].list[k].c_sum[c] ++ ;
+								break;
+							}
+						}
+						if(k==workplace[word].sum_wk){
+							//if(workplace[word].sum_wk>490)
+							//cout<<word<<" "<<workplace[word].sum_wk<<endl;
+							workplace[word].list[k].sword=sword;
+							workplace[word].list[k].wwk_sum=1;
+							workplace[word].list[k].c_sum[c]=1;
+							workplace[word].sum_wk++; 
+							allc=0;
+							for(ic=0;ic<leisum;ic++){
+								cost=0;
+								for(m=0;m<veclength;m++){
+									cost+=lveclist[word].vec[ic][m]*sveclist[sword].vec[m];						
+								}
+								workplace[word].list[k].p[ic]=exp(cost);
+								allc+=exp(cost);
+							}
+							for(ic=0;ic<leisum;ic++){
+								workplace[word].list[k].p[ic]/=allc;
+							}
+							
+						}
+					}
+				}
+			}
+			docid++;
+			if(docid%100==0)cout<<"在计算词对各个类下的频次 docsum="<<docid<<endl;
+			doclength=0;
+			if(docid>=train_sum)break;
+		}
+	}
+	for(word=0;word<word_a_sum;word++){
+		if(word<A_sum){
+			for(sword=0;sword<word_s_sum;sword++){
+				if(workplace[word].list[sword].wwk_sum>0){
+					for(c=0;c<leisum;c++){
+						workplace[word].list[sword].c_sum[c]/=(float)workplace[word].list[sword].wwk_sum;
+					}
+				}
+			}
+		}else{
+			for(k=0;k<workplace[word].sum_wk;k++){
+				for(c=0;c<leisum;c++){
+					workplace[word].list[k].c_sum[c]/=(float)workplace[word].list[k].wwk_sum;
+				}
+			}
+		}
+	}
+	return 1;
+}
+int develop::js_lmt1(){
+	int word,sword,c,k;
+	float lmt1;
+
+	for(word = 0; word < word_a_sum; word ++){
+		if(word<A_sum ){
+			for(sword = 0; sword < word_s_sum; sword ++){			
+				if(workplace[word].list[sword].wwk_sum > 0){
+					lmt1=0;
+					for(c=0;c<leisum;c++){
+						lmt1+=workplace[word].list[sword].c_sum[c]*workplace[word].list[sword].p[c];
+					}
+					workplace[word].list[sword].lmt12=lmt1;
+				}else{
+					workplace[word].list[sword].lmt12=0;
+				}
+			}
+		}else{
+			for(k=0;k<workplace[word].sum_wk;k++){
+				lmt1=0;
+				for(c=0;c<leisum;c++){
+					lmt1+=workplace[word].list[k].c_sum[c]*workplace[word].list[k].p[c];
+				}
+				workplace[word].list[k].lmt12=lmt1;
+			}
+		}
+	}
+	return 1;
+}
+int develop::js_lmt2(){
+	int word,sword,c,maxc;
+	float lmt2;
+
+	for(word=0;word<word_a_sum;word++){
+		if(word<A_sum){
+			for(sword=0;sword<word_s_sum;sword++){
+				maxc=0;
+				for(c=1;c<leisum;c++){
+					if(workplace[word].list[sword].p[c]>workplace[word].list[sword].p[maxc])
+						maxc=c;
+				}
+				lmt2=workplace[word].list[sword].c_sum[maxc];
+				workplace[word].list[sword].lmt12=lmt2;			
+			}
+		}else{
+			for(sword=0;sword<workplace[word].sum_wk;sword++){
+				maxc=0;
+				for(c=1;c<leisum;c++){
+					if(workplace[word].list[sword].p[c]>workplace[word].list[sword].p[maxc])
+						maxc=c;
+				}
+				lmt2=workplace[word].list[sword].c_sum[maxc];
+				workplace[word].list[sword].lmt12=lmt2;			
+			}
+		}
+		if(word%1000==0)cout<<" js lmt2 wordsum="<<word<<endl;
+	}
+	return 1;
+}
+int develop::js_sum_lmt12(float lmt12){
+	int word,sword;
+	int lmt12sum;
+
+	for(word = 0; word < word_a_sum; word ++){
+		lmt12sum=0;
+		if(word<A_sum){
+			for(sword = 0; sword < word_s_sum; sword ++){
+				if(workplace[word].list[sword].lmt12 >= lmt12)
+					lmt12sum ++;
+			}
+		}else{
+			for(sword = 0; sword < workplace[word].sum_wk; sword ++){
+				if(workplace[word].list[sword].lmt12 >= lmt12)
+					lmt12sum ++;
+			}
+		}
+		workplace[word].sum_lmt12 = lmt12sum;
+	}
+	return 1;
+}
+int develop::js_pw(int win, float lmt12){
+	fstream fnum,fdaan;
+	int word,sword,wordid;
+	int i,j,k;
+	int thisdoc[20000],doclength=0,docid=0;
+	float p[20];
+	int c,maxc,minc;
+	int ssum;
+	
+	for(i=0;i<word_a_sum;i++){
+		workplace[i].w_z=0;
+		workplace[i].w_c=0;
+	}	
+	fnum.open(train_num_file,ios::in);
+	fdaan.open(daan_file,ios::in);
+
+	while(!fnum.eof()){
+		fnum>>word;
+		if(fnum.eof())break;
+		if(word>=0){
+			thisdoc[doclength]=word;
+			doclength++;
+		}else{
+			fdaan>>c;
+			c--;
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word = sveclist[wordid].keyword_id;
+				if(word<0) continue;
+				for(j=0;j<leisum;j++) p[j]=0;
+
+				ssum=0;
+				for(j=i-win;j<=i+win;j++){
+					if(j<0)j=0;
+					if(j>=doclength)break;
+					if(j==i)continue;
+					//cout<<j<<endl;
+					sword=thisdoc[j];
+					if(wordid==sword)continue;
+					if(word>=A_sum){
+						for(k=0;k<workplace[word].sum_wk;k++){
+							if(workplace[word].list[k].sword==sword)break;
+						}
+						sword=k;//???????????
+						/*if(sword==workplace[word].sum_wk){
+							cout<<k<<endl;
+							cin>>k;
+						}*/
+					}
+					if(workplace[word].list[sword].lmt12 >= lmt12){						
+						for(k=0;k<leisum;k++){
+							p[k]+=log(workplace[word].list[sword].p[k]);//如果为0怎么办？
+						}
+						ssum++;
+					}
+				}
+				if(ssum==0)continue;
+				if(ssum>0){
+					maxc=0;
+					minc=0;
+					for(j=1;j<leisum;j++){
+						if(p[j]>p[maxc])maxc=j;
+						if(p[j]<p[minc])minc=j;
+					}
+					if(leisum==2){
+						if(abs(p[maxc]-p[minc])<0.05)continue;
+					}else{						
+						if(abs(p[maxc]-p[minc])<0.005)continue;
+					}
+					if(maxc==c){
+						workplace[word].w_z++;
+					}else{
+						workplace[word].w_c++;
+					}
+				}
+			}
+			docid++;
+			if(docid%100==0)cout<<"计算单词的分类性能, docsum="<<docid<<endl;
+			if(docid>=train_sum)break;
+			doclength=0;
+		}
+	}
+
+	return 0;
+}
+int develop::js_lmt3(){
+	int word,sword;
+	int i;
+	
+	for(word=0;word<word_a_sum;word++){
+		if(workplace[word].w_z>0){
+			workplace[word].lmt3=workplace[word].w_z/(float)(workplace[word].w_z+workplace[word].w_c);
+		}else{
+			workplace[word].lmt3=-1;
+		}
+	}
+	return 1;
+}
+int develop::out_place(float lmt12){
+	int word,sword,i;
+	fstream fout;
+	fout.open(workplace_file,ios::out);
+
+	for(word=0;word<word_a_sum;word++){ 
+		fout<<setw(15)<<lveclist[word].word<<" ";
+		fout<<setw(10)<<workplace[word].sum<<" ";
+		fout<<setw(15)<<workplace[word].w_z<<" "; 
+		fout<<setw(15)<<workplace[word].w_c<<" ";
+		fout<<setw(15)<<workplace[word].lmt3<<endl;
+		if(word<A_sum){
+			for(sword=0;sword<word_s_sum;sword++){ 				 
+				if(workplace[word].list[sword].lmt12>=lmt12){
+					fout<<setw(12)<< sveclist[sword].word<<" ";
+					fout<<setw(5)<< workplace[word].list[sword].wwk_sum<<" ";
+					fout<<setw(12)<< workplace[word].list[sword].lmt12<<" || ";
+					for(i=0;i<leisum;i++){
+						fout<<setw(15)<<workplace[word].list[sword].c_sum[i]<<" ";
+					}
+					fout<<" || ";
+					for(i=0;i<leisum;i++){
+						fout<<setw(15)<<workplace[word].list[sword].p[i]<<" ";
+					}
+					fout<<endl;
+				}
+			}
+		}else{
+			for(sword=0;sword<workplace[word].sum_wk;sword++){ 				 
+				if(workplace[word].list[sword].lmt12>=lmt12){
+					if(workplace[word].list[sword].sword>=word_s_sum){
+						//cin>>i;
+						continue;
+					}
+
+					fout<<setw(12)<< sveclist[workplace[word].list[sword].sword].word<<" ";
+					fout<<setw(5)<< workplace[word].list[sword].wwk_sum<<" ";
+					fout<<setw(12)<< workplace[word].list[sword].lmt12<<" || ";
+					for(i=0;i<leisum;i++){
+						fout<<setw(15)<<workplace[word].list[sword].c_sum[i]<<" ";
+					}
+					fout<<" || ";
+					for(i=0;i<leisum;i++){
+						fout<<setw(15)<<workplace[word].list[sword].p[i]<<" ";
+					}
+					fout<<endl;
+				}
+			}
+		}
+		fout<<endl<<endl;
+	}
+	return 1;
+}
+int develop::js_key_p(int win,float lmt12,float lmt3){
+	fstream fnum,fdaan,fwen,fresult;
+	int wordid, word,sword;
+	int thisdoc[20000],doclength,i,j,k,docid;
+	float doc_p[20],allp;
+	int maxc,c;
+	
+	struct key_p_data{
+		int key_wordid;
+		int p_sum;
+		int k_sum;
+		float pj_lv;
+	};
+	key_p_data kp[50000];
+	int key_sum;
+	float quj[40];
+	for(i=0;i<40;i++){
+		quj[i]=0;
+	}
+	for(i=0;i<50000;i++){
+		kp[i].k_sum=0;
+		kp[i].p_sum=0;
+	} 
+	fresult.open("F:\\带标签的词向量\\数据\\20ng\\columnpictrue.txt",ios::app);
+	doclength=0;
+	train_z=0;
+	train_c=0;
+	devel_z=0;
+	devel_c=0;
+	docid=0;
+	int u;
+	while(!fnum.eof()){
+		fnum>>word;
+		if(fnum.eof())break;
+		if(word>-1){
+			thisdoc[doclength]=word;
+			doclength++;
+		}else{
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word = sveclist[wordid].keyword_id;
+				if(word<0)continue;
+				if(workplace[word].lmt3 < lmt3) continue;
+				kp[word].k_sum++;
+				for(j=i-win;j<=i+win;j++){
+					if(j < 0)j = 0;
+					if(j >= doclength) break;
+					if(j == i) continue;
+					sword = thisdoc[j];
+					if(wordid == sword) continue;
+					if(word>=A_sum){
+						for(k=0;k<workplace[word].sum_wk;k++){
+							if(workplace[word].list[k].sword==sword)break;
+						}
+						sword=k;
+					}
+					if(workplace[word].list[sword].lmt12 < lmt12) continue;
+					//cout<<sveclist[wordid].word<<" "<<sveclist[sword].word<<endl;
+					kp[word].p_sum++;
+					//cout<<endl;
+				}
+			}
+		
+			doclength=0;
+			docid++;
+			if(docid%100==0)cout<<" 计算keyword_pointword docsum="<<docid<<endl;
+		}
+	}
+	for(i=0;i<50000;i++){
+		if(kp[i].k_sum>0){
+			kp[i].pj_lv=kp[i].p_sum/(float)kp[i].k_sum;
+			for(j=1;j<40;j++){
+				if(kp[i].pj_lv<j){
+					quj[j-1]++;
+					break;
+				}
+			}
+		}
+	}
+	fresult<<"窗口中知识词的平均数 "<<train_num_file<<endl;
+	for(i=0;i<40;i++){  
+        fresult<<quj[i]<<" ";
+	}  
+	return 1;
+}
+int develop::js_key_d(int win,float lmt12,float lmt3){
+	fstream fnum,fdaan,fwen,fresult;
+	int wordid, word,sword;
+	int thisdoc[20000],doclength,i,j,k,docid;
+	float doc_p[20],allp;
+	int maxc,c;
+	
+	struct key_d_data{
+		int d_sum;
+		int k_sum;
+		float pj_lv;
+	};
+	key_d_data kd[50000];
+	int key_sum;
+	float quj[10];
+	int qus[10];
+	for(i=0;i<10;i++){
+		quj[i]=(i+1)/(float)10;
+		qus[i]=0;
+	}
+	for(i=0;i<50000;i++){
+		kd[i].k_sum=0;
+		kd[i].d_sum=0;
+	} 
+	fresult.open("F:\\带标签的词向量\\数据\\20ng\\columnpictrue.txt",ios::app);
+	fnum.open(train_num_file,ios::in);
+	doclength=0;
+	train_z=0;
+	train_c=0;
+	devel_z=0;
+	devel_c=0;
+	docid=0;
+	int u;
+	while(!fnum.eof()){
+		fnum>>word;
+		if(fnum.eof())break;
+		if(word>-1){
+			thisdoc[doclength]=word;
+			doclength++;
+		}else{
+			kd[docid].d_sum=doclength;
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word = sveclist[wordid].keyword_id;
+				if(word<0)continue;
+				if(workplace[word].sum_wk==0) continue;
+				kd[docid].k_sum++;
+			
+			}		
+			doclength=0;
+			docid++;
+			if(docid%100==0)cout<<" 计算keyword_doc% docsum="<<docid<<endl;
+		}
+	}
+	for(i=0;i<docid;i++){
+		if(kd[i].d_sum>0){
+			kd[i].pj_lv=kd[i].k_sum/(float)kd[i].d_sum;
+			for(j=1;j<10;j++){
+				if(kd[i].pj_lv<quj[j]){
+					qus[j-1]++;
+					break;
+				}
+			}
+		}
+	}
+	fresult<<"doc中的关键词数 "<<train_num_file<<endl;
+	for(i=0;i<10;i++){  
+        fresult<<qus[j]<<" ";
+	}  
+	return 1;
+}
+int develop::js_pcd(int win,float lmt12,float lmt3){
+	fstream fnum,fdaan,fwen,fresult;
+	int wordid, word,sword;
+	int thisdoc[20000],doclength,i,j,k,docid;
+	float doc_p[20],allp;
+	int maxc,c;
+	
+	fnum.open(train_num_file,ios::in);
+	fdaan.open(daan_file,ios::in);
+	fwen.open(wen_file,ios::out);
+	fresult.open(result_file,ios::app);
+	doclength=0;
+	train_z=0; 
+	train_c=0;
+	devel_z=0;
+	devel_c=0;
+	docid=0;
+	while(!fnum.eof()){
+		fnum>>word;
+		if(fnum.eof())break;
+		if(word>-1){
+			thisdoc[doclength]=word;
+			doclength++;
+		}else{
+			fdaan>>c;c--;
+			for(i=0;i<leisum;i++)doc_p[i]=0;
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word = sveclist[wordid].keyword_id;
+				if(word<0)continue;
+				if(workplace[word].lmt3 < lmt3) continue;
+				for(j=i-win;j<=i+win;j++){
+					if(j < 0)j = 0;
+					if(j >= doclength) break;
+					if(j == i) continue;
+					sword = thisdoc[j];
+					if(wordid == sword) continue;
+					if(word>=A_sum){
+						for(k=0;k<workplace[word].sum_wk;k++){
+							if(workplace[word].list[k].sword==sword)break;
+						}
+						sword=k;
+					}
+					if(workplace[word].list[sword].lmt12 < lmt12) continue;
+					//cout<<sveclist[wordid].word<<" "<<sveclist[sword].word<<endl;
+					for(k=0;k<leisum;k++){ 
+						doc_p[k] += log(workplace[word].list[sword].p[k]);
+						//cout<<workplace[word].list[sword].p[k]<<" ";
+					}
+					//cout<<endl;
+				}
+			}
+			maxc=0;
+			allp=0;
+			for(i=1;i<leisum;i++){
+				if(doc_p[maxc]<doc_p[i]) maxc=i;
+			}
+			for(i=0;i<leisum;i++){
+				doc_p[i] -= doc_p[maxc];
+				doc_p[i] = exp(doc_p[i]);
+				allp+=doc_p[i];
+			}
+			for(i=0; i < leisum; i++) doc_p[i] /= allp;
+
+			if(docid < train_sum){
+				if(maxc==c)train_z++;
+				else train_c++;
+			}else{
+				if(maxc==c)devel_z++;
+				else devel_c++;
+			}
+			doclength=0;
+			docid++;
+			if(docid%100==0)cout<<" 计算文档分类 docsum="<<docid<<endl;
+			fwen<<setw(5)<<c+1<<setw(5)<<maxc+1;
+			for(i=0;i<leisum;i++) fwen<<setw(15)<<doc_p[i]<<" ";
+			fwen<<endl;
+		}
+	}
+	fresult<<vector_file<<endl;
+	fresult<<" win="<<win<<" lmt12="<<lmt12<<" lmt3="<<lmt3<<endl;
+	fresult<<"train zql: "<<setw(10)<<train_z<<setw(10)<<train_c<<setw(15)<<train_z/(float)(train_z+train_c)<<endl;
+	fresult<<"devel zql: "<<setw(10)<<devel_z<<setw(10)<<devel_c<<setw(15)<<devel_z/(float)(devel_z+devel_c)<<endl;
+	return 1;
+}
+int develop::js_pcd_n(int win,float lmt12,float lmt3){
+	fstream fnum,fdaan,fwen,fresult;
+	int wordid, word,sword;
+	int thisdoc[20000],doclength,i,j,k,docid;
+	float doc_p[20],allp;
+	int maxc,c;
+	
+	fnum.open(train_num_file,ios::in);
+	fdaan.open(daan_file,ios::in);
+	fwen.open(wen_file,ios::out);
+	fresult.open(result_file,ios::app);
+	doclength=0;
+	train_z=0;
+	train_c=0;
+	devel_z=0;
+	devel_c=0;
+	docid=0;
+	while(!fnum.eof()){
+		fnum>>word;
+		if(fnum.eof())break;
+		if(word>-1){
+			thisdoc[doclength]=word;
+			doclength++;
+		}else{
+			fdaan>>c;c--;
+			for(i=0;i<leisum;i++)doc_p[i]=0;
+			for(i=0;i<doclength;i++){
+				wordid=thisdoc[i];
+				word = sveclist[wordid].keyword_id;
+				if(word<0)continue;
+				if(workplace[word].lmt3 < lmt3) continue;
+				for(j=i-win;j<=i+win;j++){
+					if(j < 0)j = 0;
+					if(j >= doclength) break;
+					if(j == i) continue;
+					sword = thisdoc[j];
+					if(wordid == sword) continue;
+					if(word>=A_sum){
+						for(k=0;k<workplace[word].sum_wk;k++){
+							if(workplace[word].list[k].sword==sword)break;
+						}
+						sword=k;
+					}
+					if(workplace[word].list[sword].lmt12 < lmt12) continue;
+					//cout<<sveclist[wordid].word<<" "<<sveclist[sword].word<<endl;
+					for(k=0;k<leisum;k++){ 
+						if(workplace[word].list[sword].c_sum[k]>0)
+						doc_p[k] += log(workplace[word].list[sword].c_sum[k]);
+						//cout<<workplace[word].list[sword].p[k]<<" ";
+					}
+					//cout<<endl;
+				}
+			}
+			maxc=0;
+			allp=0;
+			for(i=1;i<leisum;i++){
+				if(doc_p[maxc]<doc_p[i]) maxc=i;
+			}
+			for(i=0;i<leisum;i++){
+				doc_p[i] -= doc_p[maxc];
+				doc_p[i] = exp(doc_p[i]);
+				allp+=doc_p[i];
+			}
+			for(i=0; i < leisum; i++) doc_p[i] /= allp;
+
+			if(docid < train_sum){
+				if(maxc==c)train_z++;
+				else train_c++;
+			}else{
+				if(maxc==c)devel_z++;
+				else devel_c++;
+			}
+			doclength=0;
+			docid++;
+			if(docid%100==0)cout<<" 计算文档分类 docsum="<<docid<<endl;
+			fwen<<setw(5)<<c+1<<setw(5)<<maxc+1;
+			for(i=0;i<leisum;i++) fwen<<setw(15)<<doc_p[i]<<" ";
+			fwen<<endl;
+		}
+	}
+	fresult<<vector_file<<endl;
+	fresult<<" win="<<win<<" lmt12="<<lmt12<<" lmt3="<<lmt3<<endl;
+	fresult<<"train zql: "<<setw(10)<<train_z<<setw(10)<<train_c<<setw(15)<<train_z/(float)(train_z+train_c)<<endl;
+	fresult<<"devel zql: "<<setw(10)<<devel_z<<setw(10)<<devel_c<<setw(15)<<devel_z/(float)(devel_z+devel_c)<<endl;
+	return 1;
+}
+int _tmain(int argc, char** argv){
+	int i;
+/*
+	strcpy(vector_file, "F:\\带标签的词向量\\数据\\20ng\\vec_d20ng_cbowin_50.txt"); 
+	strcpy(train_num_file, "F:\\带标签的词向量\\数据\\20ng\\dhebin-num-20.txt");
+	strcpy(daan_file, "F:\\带标签的词向量\\数据\\20ng\\dhebin-daan-20.txt"); 
+	strcpy(workplace_file, "F:\\带标签的词向量\\数据\\20ng\\dworkplace_file20.txt");
+	strcpy(wen_file, "F:\\带标签的词向量\\数据\\20ng\\dwenduicuo20_file.txt"); 
+	strcpy(result_file, "F:\\带标签的词向量\\数据\\20ng\\dresult20_skipin_lmt2_file1.txt"); 
+	*/
+	strcpy(vector_file, "F:\\带标签的词向量\\数据\\20ng\\vec_20ng_skipin_50.txt"); 
+	strcpy(train_num_file, "F:\\带标签的词向量\\数据\\20ng\\train-test-num-20.txt");
+	strcpy(daan_file, "F:\\带标签的词向量\\数据\\20ng\\train-test-daan-20.txt"); 
+	strcpy(workplace_file, "F:\\带标签的词向量\\数据\\20ng\\workplace_file20.txt");
+	strcpy(wen_file, "F:\\带标签的词向量\\数据\\20ng\\wenduicuo20_file.txt"); 
+	strcpy(result_file, "F:\\带标签的词向量\\数据\\20ng\\dresult20_skipin_lmt2_file1.txt"); 
+	/*
+	strcpy(vector_file, "D:\\chen\\labelvector\\20ng\\vec_d20ng_skipin_all.txt"); 
+	strcpy(train_num_file, "D:\\chen\\labelvector\\20ng\\dtrain-num-20.txt");
+	strcpy(daan_file, "D:\\chen\\labelvector\\20ng\\dtrain-daan-20.txt"); 
+	strcpy(workplace_file, "D:\\chen\\labelvector\\20ng\\dworkplace_file20.txt");
+	strcpy(wen_file, "D:\\chen\\labelvector\\20ng\\dwenduicuo20_file.txt"); 
+	strcpy(result_file, "D:\\chen\\labelvector\\20ng\\dresult20_skipin_lmt2_file.txt");*//* 
+
+	strcpy(vector_file, "vec_d20ng_skipin_all.txt"); 
+	strcpy(train_num_file, "dtrain-num-20.txt");
+	strcpy(daan_file, "dtrain-daan-20.txt"); 
+	strcpy(workplace_file, "dworkplace_file20.txt");
+	strcpy(wen_file, "dwenduicuo20_file.txt"); 
+	strcpy(result_file, "dresult20_skipin_lmt2_file.txt"); */
+	int winid,wind,win[10];
+	int lmt12id, lmt3id;
+	float  lmt12, lmt3;
+	
+	//train_sum=857;
+	//train_sum=771;
+	train_sum=11314;
+	//train_sum=10182;
+	win[0]=5;
+	win[1]=10;
+	win[2]=15;
+	win[3]=20;
+	win[4]=25;
+	win[5]=30;
+	
+	develop dlp;
+	dlp.in_vector();
+	//dlp.somword_out();
+	dlp.js_wk_p();
+	for(winid=0;winid<1;winid++){
+		wind=win[winid];
+		dlp.js_wk_s(wind);
+		dlp.js_lmt1();
+		//dlp.js_lmt2();
+		for(lmt12id=0;lmt12id<11;lmt12id++){
+			lmt12=lmt12id/(float)10;
+			dlp.js_sum_lmt12(lmt12);
+			dlp.js_pw(wind,lmt12);
+			dlp.js_lmt3();
+			dlp.js_key_d(wind,lmt12,0);
+			//dlp.out_place(lmt12);
+			dlp.js_pcd(wind,lmt12,0);
+		}
+	}
+  
+	return 0;
+}
