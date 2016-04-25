@@ -1,0 +1,308 @@
+// ijcai_带标签的词向量上传代码.cpp : 定义控制台应用程序的入口点。
+//
+// 关键词分析.cpp : 定义控制台应用程序的入口点。
+//
+  
+#include "stdafx.h" 
+#include <stdio.h>
+#include <stdlib.h>
+#include <fstream>
+#include <iostream>
+#include <string> 
+#include <io.h>
+#include <iomanip>  
+#include <math.h>   
+#include <time.h>
+#include <memory.h> 
+#include <iomanip>
+using namespace std;
+
+//抽取单词表，文本转换为数字：
+struct worddata{
+	char *word;
+	int sum;
+};
+class wordnum{
+private:
+	char train_data_file[100];
+	char test_data_file[100];
+	char train_num_file[100]; 
+	char test_num_file[100]; 
+	char vocab_file[100];
+	char label_file[100];
+public:
+	int init_data();
+	int  train_num(int);
+	int  test_num();
+};
+
+int wordnum::init_data(){
+	/*strcpy(train_data_file, "F:\\带标签的词向量\\上传代码\\R8\\train_data.txt");
+	strcpy(train_num_file,  "F:\\带标签的词向量\\上传代码\\R8\\train_num.txt");
+
+	strcpy(test_data_file,  "F:\\带标签的词向量\\上传代码\\R8\\test_data.txt");
+	strcpy(test_num_file,   "F:\\带标签的词向量\\上传代码\\R8\\test_num.txt");
+
+	strcpy(vocab_file,      "F:\\带标签的词向量\\上传代码\\R8\\train_vocablist.txt");
+	strcpy(label_file,      "F:\\带标签的词向量\\上传代码\\R8\\train_labellist.txt");
+*/
+	strcpy(train_data_file, "F:\\带标签的词向量\\上传代码\\20ng\\train_data.txt");
+	strcpy(train_num_file,  "F:\\带标签的词向量\\上传代码\\20ng\\train_num.txt");
+
+	strcpy(test_data_file,  "F:\\带标签的词向量\\上传代码\\20ng\\test_data.txt");
+	strcpy(test_num_file,   "F:\\带标签的词向量\\上传代码\\20ng\\test_num.txt");
+
+	strcpy(vocab_file,      "F:\\带标签的词向量\\上传代码\\20ng\\train_vocablist.txt");
+	strcpy(label_file,      "F:\\带标签的词向量\\上传代码\\20ng\\train_labellist.txt");
+
+	return 1;
+}
+int wordnum::train_num(int cut_sum){
+	char filename[100], word[200], hang[100000];
+	fstream fdoc, fout, fword, fnum;
+	long i, wordsum, labelsum;
+
+	worddata * wordlist;
+	worddata * labellist;
+	wordlist= new worddata[200000];
+	labellist= new worddata[100];
+	wordsum=0;
+	labelsum =0;
+
+	//open the train docs:
+	fdoc.open(train_data_file, ios::in);
+	cout << train_data_file << endl;
+	int docid = 0;
+	int doc_length = -1;
+
+	while(! fdoc.eof()){
+		fdoc >> word;
+
+		if (fdoc.eof()) break;
+		if (strlen(word) > 100 || strcmp(word, "*&*&*") == 0){
+			if(docid % 1000 == 0) cout << docid << " " << wordsum << endl;
+			docid ++;
+			doc_length = -1;
+			continue;
+		}
+		if (doc_length == -1){
+			for(i = 0; i < labelsum; i ++)
+				if(strcmp(word, labellist[i].word) == 0) break;
+			if(i < labelsum)
+				labellist[i].sum ++;
+			else{
+				labellist[i].word = new char[strlen(word) + 1];
+				strcpy(labellist[i].word, word);
+				labellist[i].sum = 1;
+				labelsum ++;
+			}
+			doc_length ++;
+			continue;
+		}
+
+		for(i = 0; i < wordsum; i ++)
+			if(strcmp(word, wordlist[i].word) == 0) break;
+		if(i < wordsum)
+			wordlist[i].sum ++;
+		else{
+			wordlist[i].word = new char[strlen(word) + 1];
+			strcpy(wordlist[i].word, word);
+			wordlist[i].sum = 1;
+			wordsum ++;
+		}
+		doc_length ++;
+	}
+	fdoc.close();
+	//order the wordlist by the sum of each word:
+	cout << wordsum << " " << labelsum << endl;
+
+	int j, newwordsum, words, maxword ;
+	worddata *newwordlist;
+	newwordlist = new worddata[wordsum];
+
+	for(i = 0; i < wordsum; i ++){
+		words = 0;
+		for(j = 0; j < wordsum; j ++){
+			if(words <= wordlist[j].sum){
+				maxword = j;
+				words = wordlist[j].sum;
+			}
+		}
+		if(words < cut_sum) break;
+
+		newwordlist[i].sum = words;
+		newwordlist[i].word = new char[strlen(wordlist[maxword].word) + 1];
+		strcpy(newwordlist[i].word, wordlist[maxword].word);
+		wordlist[maxword].sum =- 10;
+	}  
+	wordsum =i;
+	//change word to wordid in train docs:
+	
+	fdoc.open(train_data_file, ios::in);
+	fnum.open(train_num_file, ios::out);
+	int doclong = 0;
+	doc_length = -1;
+
+	while(! fdoc.eof()){
+		fdoc >> word;
+		if(fdoc.eof()) break;
+		if(strcmp(word, "*&*&*") == 0){
+			fnum << -1 << endl;
+			doc_length = -1;
+			continue;
+		}
+		if(doc_length == -1){
+			doc_length ++;
+			for(i = 0; i < labelsum; i ++){
+				if(strcmp(word, labellist[i].word) == 0 ) break;
+			} 
+			fnum << i << " ";
+		}else{			
+			doc_length ++;
+			for(i = 0; i < wordsum; i ++){
+				if(strcmp(word, newwordlist[i].word) == 0 ) break;
+			}
+			if(newwordlist[i].sum >= cut_sum)
+				fnum << i << " ";
+		}
+		doc_length ++;
+	}
+	fdoc.close();
+	fnum.close();
+
+
+	//out wordlist:
+	fword.open(vocab_file,ios::out);
+	fword << wordsum <<endl;
+	for(i = 0; i < wordsum; i ++){
+		if( newwordlist[i].sum >= cut_sum)
+		   fword << newwordlist[i].word << " " << newwordlist[i].sum << endl;
+	}
+	fword.close();
+
+		//out labellist:
+	fword.open(label_file,ios::out);
+	for(i = 0; i < labelsum; i ++){
+		if( labellist[i].sum >= cut_sum)
+		   fword << labellist[i].word << " " << labellist[i].sum << endl;
+	}
+	fword.close();
+
+	return 1;
+
+}
+int wordnum::test_num(){
+	fstream fdoc,fvocab,flabel,fnum;
+
+	char word[100];
+	long wordsum, labelsum, i, docsum = 0;
+
+	fvocab.open(vocab_file,ios::in); 
+	worddata *vocablist;
+	worddata *labellist;
+	fvocab >> wordsum;
+
+	vocablist = new worddata[wordsum];
+	labellist = new worddata[100];
+	wordsum = 0;
+	labelsum = 0;
+	 
+	// read in the vocablist:
+	while(!fvocab.eof()){
+		fvocab >> word;
+		if(fvocab.eof()) break;
+		vocablist[wordsum].word = new char[strlen(word) + 1];
+		strcpy(vocablist[wordsum].word, word);
+		fvocab >> vocablist[wordsum].sum;
+		wordsum ++;
+	}
+	fvocab.close( );
+	cout << wordsum << endl;
+
+		// read in the labellist:
+
+	flabel.open(label_file,ios::in); 
+	while(!flabel.eof()){
+		flabel >> word;
+		if(flabel.eof()) break;
+		labellist[labelsum].word = new char[strlen(word) + 1];
+		strcpy(labellist[labelsum].word, word);
+		flabel >> labellist[labelsum].sum;
+		labelsum ++;
+	}
+
+	flabel.close();
+	cout << labelsum << endl;
+	fdoc.open(test_data_file,ios::in);
+	fnum.open(test_num_file,ios::out);
+	long doc_length = -1;
+
+	while(! fdoc.eof()){
+		fdoc >> word;
+		if(fdoc.eof()) break;
+		if(strcmp(word, "*&*&*") != 0){
+			if (doc_length == -1 ){
+            	for(i = 0; i < labelsum; i ++){
+					if(strcmp(word, labellist[i].word) == 0) break;
+				}
+				fnum << i <<" "; 
+			}else{
+				for(i = 0; i < wordsum; i ++){
+					if(strcmp(word, vocablist[i].word) == 0) break;
+				}
+				if(i < wordsum ) fnum << i <<" ";
+			}
+			doc_length ++;
+		}else{
+			fnum << -1 << endl;
+			docsum ++;
+			doc_length = -1;
+			if(docsum % 1000 == 0) cout << docsum << endl;
+		}
+	}
+	fdoc.close();
+	fnum.close();
+
+	return 1;
+}
+void data_daan(){
+	fstream fdata, fdaan, fhebin;
+	char file[100];
+	long docsum;
+
+	strcpy(file,"F:\\带标签的词向量\\上传代码\\R8\\all_doc_8_nofuhao.txt");
+	fdata.open(file,ios::in);
+	strcpy(file,"F:\\带标签的词向量\\上传代码\\R8\\all_daan_8.txt");
+	fdaan.open(file,ios::in);
+	strcpy(file,"F:\\带标签的词向量\\上传代码\\R8\\test_data.txt");
+	fhebin.open(file,ios::out);
+
+	char lines[100000], daan[100], st[100];
+	long label_id, doc_id;
+	docsum = 0;
+	while(!fdata.eof() && !fdaan.eof()){
+		fdata.getline(lines,100000);
+		if(fdata.eof()) break;
+		fdaan >> st >> label_id >> daan;// label_id >> doc_id;
+		if(fdaan.eof()) break;
+
+		docsum ++;
+		if ( strcmp(st,"train") == 0) continue;
+		 
+		fhebin << daan << " ";
+		fhebin << lines << endl;
+	}
+	
+	fdata.close();
+	fdaan.close();
+	fhebin.close();
+}
+int _tmain(int argc, _TCHAR* argv[]){ 
+	//data_daan();
+	wordnum wn;
+	wn.init_data();
+	//wn.train_num(5);
+	wn.test_num();
+	return 0;
+}
+
