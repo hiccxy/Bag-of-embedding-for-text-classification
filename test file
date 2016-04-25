@@ -1,21 +1,297 @@
-this is testting :
+//
+#include "stdafx.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <windows.h>
+#include <process.h>
+#include <time.h>
+#include <iomanip> 
+using namespace std;
+
+char test_num_file[100], label_file[100], vocab_file[100], vector_file[100];
+char result_file[100];
+int train_sum;
 
 
+struct vec_data{
+	char *word;
+	float *vec;
+}; 
+struct word_data{
+	char *word;
+	int sum;
+};
+int vocab_sum;
+char class_name[20][100];
 
-path = App.path
-    files = App.path & "\1.txt"
-    Open files For Input As #1
+class test{
+private:
+	float train_z,train_c;
+	float devel_z,devel_c;
+	vec_data  *context_vec;
+	vec_data  *label_vec; 
+    word_data * vocablist, *labellist;
 
-         
-    path = "provider=microsoft.ace.oledb.12.0;Data Source=" & path & "\s1.accdb"
-    cnn.Open path
-    rec_data.Open "select * from 未修数据_整理数据  order by ID", cnn, adOpenDynamic, adLockPessimistic
-    Line Input #文件号, 字符串变量
-    
-    While Not rec_data.EOF
-        Print #1, rec_data.Fields(1).Value
-        Print #1, rec_data.Fields(2).Value
-        Print #1, rec_data.Fields(3).Value
-        Print #1, rec_data.Fields(4).Value
-        rec_data.MoveNext
-    Wend
+	long vocab_sum; 
+    long train_words;
+    int label_length,vocab_length;
+	int  veclength;
+public:
+	void Parameter_Set();
+	int in_label();
+	int in_vector(); 
+	int get_result( int );
+};
+void test::Parameter_Set(){	
+	strcpy(label_file,     "F:\\带标签的词向量\\上传代码\\R8\\train_labellist.txt"); 
+	strcpy(vocab_file,     "F:\\带标签的词向量\\上传代码\\R8\\train_vocablist.txt");
+	strcpy(vector_file,    "F:\\带标签的词向量\\上传代码\\R8\\vector_data.txt");
+	strcpy(test_num_file,  "F:\\带标签的词向量\\上传代码\\R8\\test_num.txt");
+	strcpy(result_file,    "F:\\带标签的词向量\\上传代码\\R8\\result.txt"); 
+	/*
+	strcpy(label_file,     "F:\\带标签的词向量\\上传代码\\20ng\\train_labellist.txt"); 
+	strcpy(vector_file,    "F:\\带标签的词向量\\上传代码\\20ng\\vector_data.txt");
+	strcpy(test_num_file,  "F:\\带标签的词向量\\上传代码\\20ng\\test_num.txt");
+	strcpy(result_file,    "F:\\带标签的词向量\\上传代码\\20ng\\result.txt"); 	*/
+}
+int test::in_label(){
+	fstream flabel, fvocab;
+	char word[100];
+	long sum;
+
+	labellist = new word_data[100];
+	flabel.open(label_file,ios::in);
+
+	label_length = 0;
+	while (! flabel.eof()){
+		flabel >> word >> sum;
+		if (flabel.eof()) 
+			break;
+		labellist[label_length].word = new char[strlen(word) + 1];
+		strcpy(labellist[label_length].word, word);
+		labellist[label_length].sum = sum;
+		label_length ++;
+	}
+	cout << "the sum of classes is " << label_length << endl;
+
+	fvocab.open(vocab_file,ios::in);
+	fvocab >> vocab_length;
+	//cout << vocab_length<<endl;
+	cout << "the sum of vocab is " << vocab_length << endl;
+
+	flabel.close();
+	fvocab.close();
+
+    return 1;
+}
+int test::in_vector(){ 
+	fstream fvec;
+	int vocab_sum, vocab_id;
+	char word[100];
+	int c,i,k,label;
+	int mark = 0;
+	float vz;
+	
+	fvec.open(vector_file,ios::in);
+	fvec >> vocab_sum >> veclength;
+	cout << vocab_sum << " " << veclength << " "<< label_length<<endl;
+	label_vec= new vec_data [vocab_sum];
+	context_vec= new vec_data [vocab_sum];
+	vocab_id = 0;
+
+	while(1){		
+		label_vec[vocab_id].vec = new  float[label_length * veclength];
+
+		for(c = 0; c < label_length; c ++){	
+			fvec >> word;
+		    if(strcmp(word, "&*&*&") == 0){ 
+			     break;
+		    }
+		    fvec >> label;		
+			if(c==0){
+				label_vec[vocab_id].word = new char[strlen(word) + 1];
+				strcpy(label_vec[vocab_id].word, word); 
+			}
+			 
+			for(i = 0; i < veclength; i ++){
+				fvec >> vz;
+				label_vec[vocab_id].vec[label * veclength + i] = vz;					 
+			}			 
+		}
+		vocab_id++; 
+		if(strcmp(word, "&*&*&") == 0){ 
+		     break;
+		}
+	}
+
+	cout << vocab_id << endl;
+	fvec >> vocab_sum >> veclength;
+	context_vec = new vec_data[vocab_sum];
+	vocab_id = 0;
+
+	while(!fvec.eof()){
+		fvec >> word;
+		if(fvec.eof()) break; 
+
+		context_vec[vocab_id].word = new char[strlen(word) + 1];
+		strcpy(context_vec[vocab_id].word, word);
+		context_vec[vocab_id].vec = new float[veclength];
+		for(i = 0; i < veclength; i ++) fvec >> context_vec[vocab_id].vec[i];
+		vocab_id++;
+	}
+	fvec.close();
+
+    cout<<vocab_id<<endl; 
+	return 1;
+} 
+int test::get_result(int win){	
+	fstream fnum, fresult;
+	long wordid, swordid, next_random;
+	long thisdoc[20000],doclength;
+	long i,j,k,m,docid;
+	float sample = 1e-4;
+	
+	float doc_p[20],allp;
+	int maxc,c;
+	float l_d[20][20];
+	float word_d, word_s;
+	float cost, allc,word_p[100];
+	float allcc;
+	float ran;
+
+
+	fnum.open(test_num_file, ios::in); 
+	fresult.open(result_file, ios::app);	 
+
+	doclength=0;
+	train_z=0;
+	train_c=0;
+	devel_z=0;
+	devel_c=0;
+	docid=0;
+	cout<<label_length<<endl;
+	for(i=0;i<label_length;i++){
+		for(j=0;j<label_length;j++){
+			l_d[i][j]=0;
+		}
+	}
+
+	word_s=0;
+	word_d=0;
+	while(! fnum.eof()){
+		fnum >> c;
+		doclength = 0;
+		while(1){ 
+			fnum >> wordid;
+		    if(fnum.eof()) break;
+
+			if(wordid != -1){				
+				thisdoc[doclength] = wordid;
+				doclength ++;
+			}else{
+				break;
+			}
+		}
+		if(fnum.eof()) break;		 
+		for(i = 0; i < label_length; i ++) doc_p[i] = 0;
+
+		for(i = 0; i < doclength; i ++){
+			wordid = thisdoc[i];  
+			for( k = 0; k < label_length; k ++)	word_p[k] = 0;
+			for(j = i - win; j <= i + win; j ++){
+				if(j < 0) j = 0;
+				if(j >= doclength) break;
+				swordid = thisdoc[j]; 
+				//if(j == i) continue;
+				//if ( wordid == sword ) continue;
+				allcc = 0;
+				for(k = 0; k < label_length; k ++){
+					cost = 0;
+					for(m = 0; m < veclength; m ++)	{
+						cost += context_vec[swordid].vec[m] * label_vec[wordid].vec[k * veclength + m];
+					 	//cout << cost  << " ";
+					}
+					//cout << endl << cost << endl;
+					doc_p[k] += cost;
+					word_p[k] = exp(cost);
+					allcc += word_p[k];
+				}
+				for(k = 0; k < label_length; k ++){ 
+					//cout << word_p[k] << " ";
+					word_p[k] /= allcc;
+					//doc_p[k] += log(word_p[k]);
+				}
+				//cout <<endl;
+				//cout << veclength <<endl;
+			}
+		}
+			 
+		allp=0;
+		maxc=0;
+		for(i = 1; i < label_length; i ++) if(doc_p[maxc] < doc_p[i]) maxc = i;
+
+		for(i = 0; i < label_length; i ++){
+			doc_p[i] -= doc_p[maxc];
+			doc_p[i] = exp(doc_p[i]);
+			allp += doc_p[i];
+		}
+		for(i = 0; i < label_length; i++) doc_p[i] /= (allp + 0.0000000001);
+		//cout <<c << " " << maxc<<endl;	
+		l_d[c][maxc] ++;
+		if(maxc==c)	devel_z ++;  else 	devel_c ++;			
+			 
+		doclength = 0;
+		docid ++;
+		if(docid % 100 == 0) cout << " 计算文档分类 docsum=" << docid << endl;	
+		
+		
+	}
+
+		
+
+	float lsum[10];
+	float rec[20], pre[20], f1[20],f1_all, all_sum, hang_sum;
+
+	for(i = 0; i < label_length; i ++){
+		for(j = 0; j < label_length; j++){ 
+			fresult<<setw(10)<<l_d[i][j] ;
+		}
+		fresult<<endl;
+	}
+
+	all_sum = 0;
+	f1_all = 0;
+
+	fresult<<"pr-rec-f1:"<<endl;
+	for(i = 0; i < label_length; i ++){
+		pre[i] = 0;
+		rec[i] = 0;
+		hang_sum = 0;
+		for(j = 0; j < label_length; j ++){
+			pre[i] += l_d[j][i];
+			rec[i] += l_d[i][j];
+			all_sum += l_d[i][j];
+		}
+		hang_sum = rec[i];
+		pre[i] = l_d[i][i]/pre[i];
+		rec[i] = l_d[i][i]/rec[i];
+		f1[i] = 2 * pre[i] * rec[i] / (pre[i] + rec[i]);
+		f1_all += f1[i]* hang_sum;
+		
+		fresult << setw(10)<< pre[i] << setw(10) << rec[i] << setw(10)<< f1[i]<<endl;
+	}
+	f1_all /= all_sum;
+	fresult<<" all f1=" << setw(10)<<f1_all<<endl;
+	fresult<<"noworkplace: test ac= "<<setw(15)<<devel_z/(float)(devel_z+devel_c)<<endl;
+
+	
+	return 1;
+}
+
+int _tmain(int argc, cha
